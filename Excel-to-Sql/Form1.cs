@@ -29,6 +29,8 @@ namespace WindowsFormsApplication1
             if (fd.ShowDialog() == System.Windows.Forms.DialogResult.OK)
             {
                 filePath = fd.FileName;
+                FileInfo fn = new FileInfo(filePath);
+                fileName = fn.Name;
                 InitCOnnectionString();
                 ReadShets();
             }
@@ -38,7 +40,7 @@ namespace WindowsFormsApplication1
         {
             connectionString = "Provider=Microsoft.JET.OLEDB.4.0;Data Source=" + filePath + ";Extended Properties='Excel 8.0;ReadOnly=False;$HDR=Yes;IMEX=2';";
         }
-        
+
         private MySqlConnection connection;
         private string server;
         private string database;
@@ -53,13 +55,13 @@ namespace WindowsFormsApplication1
             {
                 conn.Open();
                 //Get All Sheets Name
-                
+
                 DataTable sheetsName = conn.GetOleDbSchemaTable(OleDbSchemaGuid.Tables, new object[] { null, null, null, "TABLE" });
                 //var dbCreation = "CREATE DATABASE `TB`";
                 using (MySqlConnection connection = new MySqlConnection(dbConnectionString))
                 {
                     connection.Open();
-                   // ProicessCommand(list, dbCreation, connection);
+                    // ProicessCommand(list, dbCreation, connection);
                     foreach (var item in wsList)
                     {
                         try
@@ -104,7 +106,7 @@ namespace WindowsFormsApplication1
             }
             if (excepList.Count > 0)
             {
-                File.WriteAllLines(sqlFilePath.Replace(".sql",".log"), excepList);
+                File.WriteAllLines(sqlFilePath.Replace(".sql", ".log"), excepList);
             }
         }
 
@@ -162,7 +164,7 @@ namespace WindowsFormsApplication1
                 else
                 {
                     colString += String.Format(",{0}", dataColumnCollection[i].ColumnName);
-                    retval += String.Format(",\"{0}\"", row.ItemArray[i].ToString().Replace("\""," "));
+                    retval += String.Format(",\"{0}\"", row.ItemArray[i].ToString().Replace("\"", " "));
                 }
             }
             var dbQuery = String.Format("INSERT INTO {0}({1}) VALUES ({2})", item.Replace("$", ""), colString, retval);
@@ -198,28 +200,85 @@ namespace WindowsFormsApplication1
             database = lblDBName.Text;
             uid = lblUID.Text;
             password = lblPwd.Text;
-            if (server.Length > 0 && database.Length > 0 && uid.Length > 0 && password.Length > 0)
+            //if (server.Length > 0 && database.Length > 0 && uid.Length > 0 && password.Length > 0)
             {
                 SaveFileDialog fd = new SaveFileDialog();
                 fd.DefaultExt = "sql";
                 fd.Filter = "Sql files|*.sql";
                 if (fd.ShowDialog() == System.Windows.Forms.DialogResult.OK)
                 {
-                    filePath = fd.FileName;
+                    sqlFilePath = fd.FileName;
                     isSave = true;
-                    InsertIntoMariaDB();
+                    SaveAsSql();
                 }
             }
-            else
+            //else
             {
                 MessageBox.Show("Give Complete Details to Convert");
+            }
+        }
+
+        private void SaveAsSql()
+        {
+            using (OleDbConnection conn = new OleDbConnection(connectionString))
+            {
+                conn.Open();
+                //Get All Sheets Name
+
+                DataTable sheetsName = conn.GetOleDbSchemaTable(OleDbSchemaGuid.Tables, new object[] { null, null, null, "TABLE" });
+                var dbCreation = String.Format("CREATE DATABASE `{0}`", fileName.Substring(0, fileName.IndexOf(".")).Replace(" ", ""));
+                list.Add(dbCreation);
+                foreach (var item in wsList)
+                {
+                    try
+                    {
+                        string sql = string.Format("SELECT * FROM [{0}] ", item);
+                        OleDbDataAdapter ada = new OleDbDataAdapter(sql, connectionString);
+                        DataSet set = new DataSet();
+                        ada.Fill(set);
+                        DataTable tables = set.Tables[0];
+                        LastRow = tables.Rows.Count;
+                        var table = set.Tables[0].AsEnumerable();
+
+                        var colCreationScript = GetColumnCreationScript(tables.Columns);
+                        var tableCreationScript = String.Format(tableString, item.Replace("$", ""), colCreationScript);
+                        var query = "";
+                        ProicessCommand(list, tableCreationScript, connection);
+                        for (int i = 0; i < LastRow; i++)
+                        {
+                            try
+                            {
+                                var row = tables.Rows[i];
+                                query = GetQueryString(row, tables.Columns, item);
+                                ProicessCommand(list, query, connection);
+                            }
+                            catch (Exception ex)
+                            {
+                                excepList.Add(query + "\r\n" + ex.Message);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show(ex.Message);
+                    }
+
+                }
+                if (isSave)
+                {
+                    File.WriteAllLines(sqlFilePath, list);
+                }
+            }
+            if (excepList.Count > 0)
+            {
+                File.WriteAllLines(sqlFilePath.Replace(".sql", ".log"), excepList);
             }
         }
 
         private void btnConnect_Click(object sender, EventArgs e)
         {
             server = dbIpAddress.Text;
-            database = lblDBName.Text ;
+            database = lblDBName.Text;
             uid = lblUID.Text;
             password = lblPwd.Text;
             if (server.Length > 0 && database.Length > 0 && uid.Length > 0 && password.Length > 0)
@@ -231,5 +290,7 @@ namespace WindowsFormsApplication1
                 MessageBox.Show("Give Complete Details to Convert");
             }
         }
+
+        public string fileName { get; set; }
     }
 }
